@@ -45,14 +45,10 @@ wchar_t gwcRoomTitle[MAX_PATH] = { '0' };
 int iMaxNicks = 0;
 int iDrp = 0;
 // UIAutomation related globals
-IUIAutomationElement* emojiTextEditElement = nullptr;
-IUIAutomationElement* automationElementRoom = nullptr;
-CComPtr<IUIAutomation> automation;
+CComPtr<IUIAutomationElement> emojiTextEditElement;
+CComPtr<IUIAutomationElement> automationElementRoom;
+CComPtr<IUIAutomation> g_pUIAutomation;
 
-//Quick Messagebox macro
-#define msga(x) msgba(ghMain,x)
-// Quick Messagebox WIDE String
-#define msgw(x) msgbw(ghMain,x)
 
 // Function prototypes
 BOOL CALLBACK DlgMain(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
@@ -74,7 +70,6 @@ void CopyPaste2Paltalk(char* szMsg);
 HRESULT __stdcall InitUIAutomation(void);
 HRESULT __stdcall GetUIAutomationElementFromHWNDAndClassName(HWND hwnd, const wchar_t* className, IUIAutomationElement** foundElement);
 HRESULT __stdcall FindWindowByTitle(const std::wstring& title, IUIAutomationElement** outElement);
-void __stdcall DotMicUser(char* szMicUser);
 static void SimulateRightClick(int x, int y);
 static void SimulateLeftClick(int x, int y);
 static void SendEnterTwice();
@@ -87,6 +82,11 @@ int APIENTRY WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
 	InitCommonControls();
 	LoadLibraryW(L"riched20.dll"); // comment if richedit is not used
 	// TODO: Add any initiations as needed
+	HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED); // For STA
+	if (FAILED(hr)) {
+		msga("CoInitializeEx Failed!");
+		return 2;
+	}
 	return DialogBox(hInst, MAKEINTRESOURCE(IDD_DLGMAIN), NULL, (DLGPROC)DlgMain);
 }
 
@@ -113,8 +113,7 @@ BOOL CALLBACK DlgMain(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 	case WM_CLOSE:
 	{
 		if (emojiTextEditElement)
-			emojiTextEditElement->Release();
-		CoUninitialize();
+		   CoUninitialize();
 		if (ghFntClk)
 			DeleteObject(ghFntClk);
 		EndDialog(hwndDlg, 0);
@@ -441,17 +440,20 @@ void MicTimerTick(void)
 			// Sending to the room auto dot is coming 
 			sprintf_s(szMsg, MAX_PATH, "%s on Mic for: %d:%02d min. TIME LIMIT AUTO DOT!", gszCurrentNick, iMin, iSec);
 			CopyPaste2Paltalk(szMsg);
-			// Save the curret nick for dotting 
+			// Save the current nick for dotting 
 			sprintf_s(gszDotMicUser, MAX_PATH, "%s", gszCurrentNick);
 			// Reset the timer
 			MicTimerReset(); // Reset the mic timer
 			// Reset saved nick
 			sprintf_s(gszSavedNick, "a"); // Reset the saved nick
 			//DotMicUser(gszDotMicUser); // Dot the mic user
-			// Test New
-			DotAndUnDotMicUser("MaxTimer");
+			// First call to dot
+			DotAndUnDotMicUser(gszDotMicUser);
+			Sleep(1000);
+			// Second call remove the dot 
+			DotAndUnDotMicUser(gszDotMicUser);
 			// Reset dotted mic user
-			sprintf_s(gszDotMicUser, MAX_PATH, "a");
+			sprintf_s(gszDotMicUser, MAX_PATH, "x1x1x1y2y2y2");
 			
 			return; // No need to send text every second
 		}
@@ -471,7 +473,7 @@ void MicTimerTick(void)
 	}
 }
 
-
+/// Every sec checks mic user
 void MonitorTimerTick(void)
 {
 	GetMicUser();
@@ -616,6 +618,7 @@ BOOL GetMicUser(void)
 	return bRet;
 }
 
+/// Make popup menu for beep
 void CreateContextMenu(WPARAM wParam, LPARAM lparam)
 {
 	HMENU hMenu = CreatePopupMenu();
@@ -628,7 +631,6 @@ void CreateContextMenu(WPARAM wParam, LPARAM lparam)
 
 	TrackPopupMenu(hMenu, TPM_LEFTALIGN | TPM_TOPALIGN, pt.x, pt.y, 0, ghMain, NULL);
 }
-
 
 /// Start Monitoring the mic que
 void StartStopMonitoring(void)
@@ -751,7 +753,7 @@ HRESULT __stdcall GetUIAutomationElementFromHWNDAndClassName(HWND hwnd, const wc
 	HRESULT hr = S_OK;
 
 	CComPtr<IUIAutomationElement> elementRoom;
-	hr = automation->ElementFromHandle(hwnd, &elementRoom);
+	hr = g_pUIAutomation->ElementFromHandle(hwnd, &elementRoom);
 	if (FAILED(hr)) {
 		char szDebug[] = "ElementFromHandle failed: elementRoom\n";
 		OutputDebugStringA(szDebug);
@@ -760,7 +762,7 @@ HRESULT __stdcall GetUIAutomationElementFromHWNDAndClassName(HWND hwnd, const wc
 
 	CComPtr<IUIAutomationCondition> classNameCondition;
 	CComVariant classNameVariant(className);
-	hr = automation->CreatePropertyCondition(UIA_ClassNamePropertyId, classNameVariant, &classNameCondition);
+	hr = g_pUIAutomation->CreatePropertyCondition(UIA_ClassNamePropertyId, classNameVariant, &classNameCondition);
 	if (FAILED(hr)) {
 		char szDebug[] = "CreatePropertyCondition failed : className\n";
 		OutputDebugStringA(szDebug);
@@ -777,13 +779,13 @@ HRESULT __stdcall GetUIAutomationElementFromHWNDAndClassName(HWND hwnd, const wc
 	return S_OK;
 }
 
-// Find the Chat window by title
+/// Find the Chat window by title
 HRESULT __stdcall FindWindowByTitle(const std::wstring& title, IUIAutomationElement** outElement)
 {
 	HRESULT hr = S_OK;
 
 	CComPtr<IUIAutomationElement> root = nullptr; // Desktop
-	hr = automation->GetRootElement(&root);
+	hr = g_pUIAutomation->GetRootElement(&root);
 	if (FAILED(hr)) {
 		swprintf_s(gwcDebugMsg, MAX_PATH, L"Error getting root element");
 		OutputDebugStringW(gwcDebugMsg);
@@ -792,315 +794,23 @@ HRESULT __stdcall FindWindowByTitle(const std::wstring& title, IUIAutomationElem
 
 	CComPtr<IUIAutomationCondition> cond = nullptr;
 	CComVariant NameVariant(title.c_str());
-	hr = automation->CreatePropertyCondition(UIA_NamePropertyId, NameVariant, &cond);
+	hr = g_pUIAutomation->CreatePropertyCondition(UIA_NamePropertyId, NameVariant, &cond);
 		
 	hr = root->FindFirst(TreeScope_Children, cond, outElement);
+	if (FAILED(hr)) {
+		sprintf_s(gszDebugMsg, MAX_PATH, "Failed to find the Room!");
+		OutputDebugStringA(gszDebugMsg);
+		return hr;
+	}
 			
 	return hr; 
 }
 
-// Auto Dotting after 30sec the time limit passed 
-void __stdcall DotMicUser(char* szMicUser)
-{
-	char szMsg[MAX_PATH] = { '\0' };
-	POINT ptCur = { 0 };
-	POINT ptBaseButton = { 0 };
-
-	IUIAutomationElement* roomEl = nullptr;
-	std::wstring strRoomName(gwcRoomTitle);
-
-	if (FAILED(FindWindowByTitle(strRoomName, &roomEl))) {
-		swprintf_s(gwcDebugMsg, MAX_PATH, L"Room not found: %s \n", gwcRoomTitle);
-		OutputDebugStringW(gwcDebugMsg);
-		return;
-	}
-
-	//Get the Room window in focus
-	roomEl->SetFocus();
-	GetCursorPos(&ptCur);
-
-	// Find the TalkingNowWidget element by class name
-	VARIANT vClassName;
-	vClassName.vt = VT_BSTR;
-	vClassName.bstrVal = SysAllocString(L"ui::rooms::TalkingNowWidget"); // Replace with actual class name
-	if (vClassName.bstrVal == nullptr) {
-		//OutputErrorDebugStringW( L"Failed to allocate BSTR for class name." );
-		roomEl->Release();
-		return;
-	}
-	IUIAutomationElement* talkingNowEl = nullptr;
-	IUIAutomationCondition* classCondition = nullptr;
-	IUIAutomation* automation = nullptr;
-	if (FAILED(CoCreateInstance(__uuidof(CUIAutomation), nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&automation)))) {
-		//OutputErrorDebugStringW(L"Failed to create UIAutomation instance.");
-		SysFreeString(vClassName.bstrVal);
-		roomEl->Release();
-		return;
-	}
-	automation->CreatePropertyCondition(UIA_ClassNamePropertyId, vClassName, &classCondition);
-	if (FAILED(roomEl->FindFirst(TreeScope_Descendants, classCondition, &talkingNowEl))) {
-		//OutputErrorDebugStringW(L"TalkingNowWidget not found in room.") ;
-		SysFreeString(vClassName.bstrVal);
-		classCondition->Release();
-		roomEl->Release();
-		automation->Release();
-		return;
-	}
-	SysFreeString(vClassName.bstrVal);
-	classCondition->Release();
-
-	// Right click the talkingNowEl element and send 2 ENTER to it 
-	VARIANT vRect = { 0 };
-	vRect.vt = VT_ARRAY | VT_R8; // The variant type is set for an array of doubles.
-
-	talkingNowEl->GetCurrentPropertyValue(UIA_BoundingRectanglePropertyId, &vRect);
-	SAFEARRAY* psa = nullptr;
-	if (vRect.vt == (VT_ARRAY | VT_R8) && vRect.parray != nullptr) {
-		psa = vRect.parray;
-		double* pData = nullptr;
-		SafeArrayAccessData(psa, (void**)&pData);
-
-		if (pData != nullptr) {
-			RECT r;
-			r.left = static_cast<LONG>(pData[0]);
-			r.top = static_cast<LONG>(pData[1]);
-			r.right = static_cast<LONG>(pData[2]);
-			r.bottom = static_cast<LONG>(pData[3]);
-
-			int x = (r.left + (r.right / 2));
-			int y = (r.top + (r.bottom / 2));
-
-			//sprintf_s(szMsg, MAX_PATH, "X position = %d Y position = %d\n",x,y);
-			//OutputDebugStringA(szMsg);
-
-			roomEl->SetFocus();
-			POINT p = { 0 };
-			GetCursorPos(&p);
-
-			SimulateRightClick(x, y);
-			std::this_thread::sleep_for(std::chrono::milliseconds(500));
-			SendEnterTwice();
-
-		}
-
-		SafeArrayUnaccessData(psa);
-	}
-
-	/***************************************************************************************************************/
-	// Undoing the dot from the person we just dotted 
-	std::this_thread::sleep_for(std::chrono::milliseconds(2000)); // Give time to dot 
-
-	// Finding the mic queue title widget element
-	IUIAutomationElement* micQueueTitleEl = nullptr;
-	IUIAutomationCondition* classCondTitleItem = nullptr;
-	VARIANT vTitleItemClass = { 0 };
-	vTitleItemClass.vt = VT_BSTR;
-	vTitleItemClass.bstrVal = SysAllocString(L"ui::rooms::member_list::MicQueueTitleItemWidget"); // Mic queue Title to search for nick
-	if (vClassName.bstrVal == nullptr) {
-		std::wcerr << L"Failed to allocate BSTR for class name. for TitleItemWidget" << std::endl;
-	}
-	// Setting up class name condition for TitleWidget
-	if (FAILED(automation->CreatePropertyCondition(UIA_ClassNamePropertyId, vTitleItemClass, &classCondTitleItem))) {
-		//OutputErrorDebugStringW(L"Error creating classCondTitleItem!");
-		SysFreeString(vTitleItemClass.bstrVal);
-		roomEl->Release();
-		automation->Release();
-		return;
-	}
-	// Getting the micQueueTitleEl element
-	if (FAILED(roomEl->FindFirst(TreeScope_Descendants, classCondTitleItem, &micQueueTitleEl))) {
-		//OutputErrorDebugStringW(L"Error finding Mic Queue Title Widget");
-		SysFreeString(vTitleItemClass.bstrVal);
-		classCondTitleItem->Release();
-		roomEl->Release();
-		automation->Release();
-		return;
-	}
-
-	// if we got this far, we got the mic queue title element 
-	if (classCondTitleItem) classCondTitleItem->Release();
-	SysFreeString(vTitleItemClass.bstrVal);
-
-	// Finding the Base Button element by class name
-	IUIAutomationElement* baseButtonEl = nullptr;
-	IUIAutomationCondition* condBaseButton = nullptr;
-
-	VARIANT vbaseButtonClass;
-	vbaseButtonClass.vt = VT_BSTR;
-	vbaseButtonClass.bstrVal = SysAllocString(L"qtctrl::BaseButton");
-	if (vbaseButtonClass.bstrVal == nullptr) {
-		//OutputErrorDebugStringW(L"Failed to allocate BSTR for class name. BaseButton");
-		if (micQueueTitleEl) micQueueTitleEl->Release();
-		if (roomEl) roomEl->Release();
-		if (automation) automation->Release();
-		return;
-	}
-
-	// Setting up the condition for base button 
-	if (FAILED(automation->CreatePropertyCondition(UIA_ClassNamePropertyId, vbaseButtonClass, &condBaseButton))) {
-		//OutputErrorDebugStringW(L"Error failed to creat condition for BaseButton");
-		SysFreeString(vbaseButtonClass.bstrVal);
-		if (micQueueTitleEl) micQueueTitleEl->Release();
-		if (roomEl) roomEl->Release();
-		if (automation) automation->Release();
-		return;
-	}
-
-	// Get the baseButton element
-	if (FAILED(micQueueTitleEl->FindFirst(TreeScope_Descendants, condBaseButton, &baseButtonEl))) {
-		//OutputErrorDebugStringW(L"Error finding BaseButton element");
-		SysFreeString(vbaseButtonClass.bstrVal);
-		condBaseButton->Release();
-		roomEl->Release();
-		automation->Release();
-		return;
-	}
-	//Now we got the BaseButton element
-	if (condBaseButton) condBaseButton->Release();
-	SysFreeString(vbaseButtonClass.bstrVal);
-
-	//Start finding the dotted person in the nick list
-	baseButtonEl->GetCurrentPropertyValue(UIA_BoundingRectanglePropertyId, &vRect);
-	SAFEARRAY* psa2 = nullptr;
-	if (vRect.vt == (VT_ARRAY | VT_R8) && vRect.parray != nullptr) {
-		psa2 = vRect.parray;
-		double* pData = nullptr;
-		SafeArrayAccessData(psa2, (void**)&pData);
-
-		if (pData != nullptr) {
-			RECT r;
-			r.left = static_cast<LONG>(pData[0]);
-			r.top = static_cast<LONG>(pData[1]);
-			r.right = static_cast<LONG>(pData[2]);
-			r.bottom = static_cast<LONG>(pData[3]);
-
-			int x = (r.left + (r.right / 2));
-			int y = (r.top + (r.bottom / 2));
-			ptBaseButton.x = x;
-			ptBaseButton.y = y;
-
-			sprintf_s(szMsg, MAX_PATH, "X position = %d Y position = %d\n", x, y);
-			OutputDebugStringA(szMsg);
-
-			roomEl->SetFocus();
-
-			// Activate the user list search box
-			SimulateLeftClick(x, y);
-			std::this_thread::sleep_for(std::chrono::milliseconds(300));
-			// Send the dotted user name to the search box
-
-			for (int i = 0; i < strlen(szMicUser); i++)
-			{
-				SendMessageA(ghPtMain, WM_CHAR, (WPARAM)szMicUser[i], 0);
-			}
-
-			// Wait to search 			
-			std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-
-		}
-
-		SafeArrayUnaccessData(psa2);
-	}
-
-	// Getting the ui::rooms::member_list::MemberItemWidget
-	IUIAutomationElement* memberItemEl = nullptr;
-	IUIAutomationCondition* condMemberItem = nullptr;
-	VARIANT vcondMemberItem;
-	vcondMemberItem.vt = VT_BSTR;
-	vcondMemberItem.bstrVal = SysAllocString(L"ui::rooms::member_list::MemberItemWidget");
-
-	if (vcondMemberItem.bstrVal == nullptr) {
-		//OutputErrorDebugStringW(L"Failed to allocate BSTR for class name. vcondMemberItem");
-		if (micQueueTitleEl) micQueueTitleEl->Release();
-		if (baseButtonEl) baseButtonEl->Release();
-		if (roomEl) roomEl->Release();
-		if (automation) automation->Release();
-		return;
-	}
-
-	// Setting up the condition for memberItemEl
-	if (FAILED(automation->CreatePropertyCondition(UIA_ClassNamePropertyId, vcondMemberItem, &condMemberItem))) {
-		//OutputErrorDebugStringW(L"Error failed to creat condition for FlatButton");
-		SysFreeString(vcondMemberItem.bstrVal);
-		if (micQueueTitleEl) micQueueTitleEl->Release();
-		if (roomEl) roomEl->Release();
-		if (automation) automation->Release();
-		return;
-	}
-
-	// Get the memberItemEl element
-	if (FAILED(roomEl->FindFirst(TreeScope_Descendants, condMemberItem, &memberItemEl))) {
-		//OutputErrorDebugStringW(L"Error finding FlatButton element");
-		SysFreeString(vcondMemberItem.bstrVal);
-		if (baseButtonEl) baseButtonEl->Release();
-		// if (condFlatButton) condFlatButton->Release();
-		if (roomEl) roomEl->Release();
-		if (automation) automation->Release();
-		return;
-	}
-	//We got member Item, we can release the bstr 
-	SysFreeString(vcondMemberItem.bstrVal);
-
-	// Getting the bounding rect of member item.
-	VARIANT vRect2 = { 0 };
-	vRect.vt = VT_ARRAY | VT_R8; // The variant type is set for an array of doubles.
-	memberItemEl->GetCurrentPropertyValue(UIA_BoundingRectanglePropertyId, &vRect2);
-	SAFEARRAY* psa3 = nullptr;
-	if (vRect2.vt == (VT_ARRAY | VT_R8) && vRect2.parray != nullptr) {
-		psa3 = vRect2.parray;
-		double* pData = nullptr;
-		SafeArrayAccessData(psa3, (void**)&pData);
-
-		if (pData != nullptr) {
-			RECT r;
-			r.left = static_cast<LONG>(pData[0]);
-			r.top = static_cast<LONG>(pData[1]);
-			r.right = static_cast<LONG>(pData[2]);
-			r.bottom = static_cast<LONG>(pData[3]);
-
-			int x = (r.left + (r.right / 2));
-			int y = (r.top + (r.bottom / 2));
-
-			sprintf_s(szMsg, MAX_PATH, "X: %d Y: %d   memberItemEl\n", x, y);
-			OutputDebugStringA(szMsg);
-
-			roomEl->SetFocus();
-			POINT p = { 0 };
-			GetCursorPos(&p);
-
-			SimulateRightClick(x, y);
-			std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-			SendEnterTwice();
-			std::this_thread::sleep_for(std::chrono::milliseconds(1000));
-			SimulateLeftClick(ptBaseButton.x, ptBaseButton.y);
-			SetCursorPos(ptCur.x, ptCur.y);
-		}
-
-		SafeArrayUnaccessData(psa3);
-	}
-
-	// Cleanup the elements and automation
-	if (memberItemEl) memberItemEl->Release();
-	if (baseButtonEl) baseButtonEl->Release();
-	if (micQueueTitleEl) micQueueTitleEl->Release();
-	if (talkingNowEl) talkingNowEl->Release();
-	if (automation) automation->Release();
-	if (roomEl) roomEl->Release();
-
-	// End of DotMicPerson 
-}
-
-// Initialize UI Automation
+/// Initialize UI Automation
 HRESULT __stdcall InitUIAutomation(void)
 {
-	HRESULT hr = CoInitialize(NULL);
-	if (FAILED(hr)) {
-		sprintf_s(gszDebugMsg, MAX_PATH, "CoInitialize failed: 0x%008X", hr);
-		OutputDebugStringA(gszDebugMsg);
-		return hr;
-	}
-
-	hr = CoCreateInstance(__uuidof(CUIAutomation), NULL, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&automation));
+	HRESULT hr = S_OK;
+	hr = CoCreateInstance(__uuidof(CUIAutomation), NULL, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&g_pUIAutomation));
 	if (FAILED(hr)) {
 		sprintf_s(gszDebugMsg, MAX_PATH, "CoCreateInstance failed: 0x%008X", hr);
 		OutputDebugStringA(gszDebugMsg);
@@ -1110,18 +820,21 @@ HRESULT __stdcall InitUIAutomation(void)
 	return S_OK;
 }
 
+/// Simulate mouse right click
 static void SimulateRightClick(int x, int y) {
 	SetCursorPos(x, y);
 	mouse_event(MOUSEEVENTF_RIGHTDOWN, x, y, 0, 0);
 	mouse_event(MOUSEEVENTF_RIGHTUP, x, y, 0, 0);
 }
 
+/// Simulate mouse left click
 static void SimulateLeftClick(int x, int y) {
 	SetCursorPos(x, y);
 	mouse_event(MOUSEEVENTF_LEFTDOWN, x, y, 0, 0);
 	mouse_event(MOUSEEVENTF_LEFTUP, x, y, 0, 0);
 }
 
+/// Simulate Enter button press twice
 static void SendEnterTwice() {
 	INPUT input[2] = {};
 	for (int i = 0; i < 2; ++i) {
@@ -1140,9 +853,12 @@ static void SendEnterTwice() {
 HRESULT __stdcall DotAndUnDotMicUser(char* szMicUser)
 {
 	HRESULT hr = S_OK;
-	
+	POINT ptCur = { 0 }; 
+	VARIANT vRect = { 0 };
+	vRect.vt = VT_ARRAY | VT_R8; // The variant type is set for an array of doubles.
+
 	// Getting the chat room element
-	CComPtr<IUIAutomationElement> elementRoom;
+	CComPtr<IUIAutomationElement> elementRoom = nullptr;
 	std::wstring strRoomTitle(gwcRoomTitle);
 	hr = FindWindowByTitle(strRoomTitle, &elementRoom);
 	if (FAILED(hr)) {
@@ -1151,26 +867,148 @@ HRESULT __stdcall DotAndUnDotMicUser(char* szMicUser)
 		return hr;
 	}
 
-	// Finding the Mic Queue Title Widget element
-	CComPtr<IUIAutomationElement> elementMicQueueTitle ;
-	CComPtr<IUIAutomationCondition> classNameCondition;
-	// Creating class condition
-	CComVariant classNameVariant(L"automation->CreatePropertyCondition(UIA_ClassNamePropertyId, vTitleItemClass, &classCondTitleItem)");
-	hr = automation->CreatePropertyCondition(UIA_ClassNamePropertyId, classNameVariant, &classNameCondition);
+	elementRoom->SetFocus();
+	GetCursorPos(&ptCur);
+
+	CComPtr<IUIAutomation> automation = nullptr;
+	hr = CoCreateInstance(__uuidof(CUIAutomation), nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&automation));
 	if (FAILED(hr)) {
-		swprintf_s(gwcDebugMsg, MAX_PATH, L"Class condition for MicQueueTitle failed!\n");
-		OutputDebugStringW(gwcDebugMsg);
+		swprintf_s(gwcDebugMsg, MAX_PATH, L"creating automation failed!\n");
+		OutputDebugStringW(gwcRoomTitle);
 		return hr;
 	}
-	// Getting the elementMicQueueTitle
-	hr = elementRoom->FindFirst(TreeScope_Descendants, classNameCondition, &elementMicQueueTitle);
-	if (FAILED(hr)) {
-		swprintf_s(gwcDebugMsg, MAX_PATH, L"Failed to find the elementMicQueueTitle!\n");
-		OutputDebugStringW(gwcDebugMsg);
+	// Finding the mic queue title widget element
+	CComPtr<IUIAutomationElement> micQueueTitleEl;
+	CComPtr<IUIAutomationCondition> classCondTitleItem;
+	CComVariant ClassNameVariant(L"ui::rooms::member_list::MicQueueTitleItemWidget");
+	// Setting up class name condition for TitleWidget
+	if (FAILED(automation->CreatePropertyCondition(UIA_ClassNamePropertyId, ClassNameVariant, &classCondTitleItem))) {
+		swprintf_s(gwcDebugMsg, MAX_PATH, L"TitleWidget Condition Failed!\n");
+		OutputDebugStringW(gwcRoomTitle);
 		return hr;
 	}
+	// Getting the micQueueTitleEl element
+	if (FAILED(elementRoom->FindFirst(TreeScope_Descendants, classCondTitleItem, &micQueueTitleEl))) {
+		swprintf_s(gwcDebugMsg, MAX_PATH, L"creating automation failed!\n");
+		OutputDebugStringW(gwcRoomTitle);
+		return hr;
+	}
+	// Finding the Base Button element by class name
+	CComPtr<IUIAutomationElement> baseButtonEl;
+	CComPtr<IUIAutomationCondition> condBaseButton;
+	CComVariant BaseButtonVariant(L"qtctrl::BaseButton");
+	
+	// Setting up the condition for base button 
+	if (FAILED(g_pUIAutomation->CreatePropertyCondition(UIA_ClassNamePropertyId, BaseButtonVariant, &condBaseButton))) {
+		swprintf_s(gwcDebugMsg, MAX_PATH, L"Failed to create BaseButton Condition!\n");
+		OutputDebugStringW(gwcRoomTitle);
+		return hr;
+	}
+	// Get the baseButton element
+	if (FAILED(micQueueTitleEl->FindFirst(TreeScope_Descendants, condBaseButton, &baseButtonEl))) {
+		swprintf_s(gwcDebugMsg, MAX_PATH, L"Failed to create BaseButton Condition!\n");
+		OutputDebugStringW(gwcRoomTitle);
+		return hr;
+	}
+	//Now we got the BaseButton element
+	
+	//Start finding the user in the nick list
+	baseButtonEl->GetCurrentPropertyValue(UIA_BoundingRectanglePropertyId, &vRect);
+	POINT ptBaseButton = { 0 };
 
+	SAFEARRAY* psa2 = nullptr;
 
+	if (vRect.vt == (VT_ARRAY | VT_R8) && vRect.parray != nullptr) {
+		psa2 = vRect.parray;
+		double* pData = nullptr;
+		SafeArrayAccessData(psa2, (void**)&pData);
+
+		if (pData != nullptr) {
+			RECT r;
+			r.left = static_cast<LONG>(pData[0]);
+			r.top = static_cast<LONG>(pData[1]);
+			r.right = static_cast<LONG>(pData[2]);
+			r.bottom = static_cast<LONG>(pData[3]);
+
+			int x = (r.left + (r.right / 2));
+			int y = (r.top + (r.bottom / 2));
+			ptBaseButton.x = x;
+			ptBaseButton.y = y;
+
+			sprintf_s(gszDebugMsg, MAX_PATH, "X position = %d Y position = %d\n", x, y);
+			OutputDebugStringA(gszDebugMsg);
+
+			baseButtonEl->SetFocus();
+
+			// Activate the user list search box
+			SimulateLeftClick(x, y);
+			std::this_thread::sleep_for(std::chrono::milliseconds(300));
+			// Send the dotted user name to the search box
+			for (int i = 0; i < strlen(szMicUser); i++)
+			{
+				SendMessageA(ghPtMain, WM_CHAR, (WPARAM)szMicUser[i], 0);
+			}
+			// Wait to search 			
+			std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+		}
+		SafeArrayUnaccessData(psa2);
+	}
+	// Getting the ui::rooms::member_list::MemberItemWidget
+	CComPtr<IUIAutomationElement> memberItemEl;
+	CComPtr<IUIAutomationCondition> condMemberItem;
+	CComVariant vcondMemberItem(L"ui::rooms::member_list::MemberItemWidget");
+	// Setting up the condition for memberItemEl
+	if (FAILED(automation->CreatePropertyCondition(UIA_ClassNamePropertyId, vcondMemberItem, &condMemberItem))) {
+		swprintf_s(gwcDebugMsg, MAX_PATH, L"Failed to create MemberItemWidget Condition!\n");
+		OutputDebugStringW(gwcRoomTitle);
+		return hr;
+	}
+	// Get the memberItemEl element
+	if (FAILED(elementRoom->FindFirst(TreeScope_Descendants, condMemberItem, &memberItemEl))) {
+		swprintf_s(gwcDebugMsg, MAX_PATH, L"Failed to create MemberItemWidget Condition!\n");
+		OutputDebugStringW(gwcRoomTitle);
+		return hr;
+	}
+	
+	// Getting the bounding rect of member item.
+	vRect = { 0 };
+	vRect.vt = VT_ARRAY | VT_R8; // The variant type is set for an array of doubles.
+	memberItemEl->GetCurrentPropertyValue(UIA_BoundingRectanglePropertyId, &vRect);
+	SAFEARRAY* psa3 = nullptr;
+	if (vRect.vt == (VT_ARRAY | VT_R8) && vRect.parray != nullptr) {
+		psa3 = vRect.parray;
+		double* pData = nullptr;
+		SafeArrayAccessData(psa3, (void**)&pData);
+
+		if (pData != nullptr) {
+			RECT r;
+			r.left = static_cast<LONG>(pData[0]);
+			r.top = static_cast<LONG>(pData[1]);
+			r.right = static_cast<LONG>(pData[2]);
+			r.bottom = static_cast<LONG>(pData[3]);
+
+			int x = (r.left + (r.right / 2));
+			int y = (r.top + (r.bottom / 2));
+
+			sprintf_s(gszDebugMsg, MAX_PATH, "X: %d Y: %d   memberItemEl\n", x, y);
+			OutputDebugStringA(gszDebugMsg);
+
+			elementRoom->SetFocus();
+			
+			SimulateRightClick(x, y);
+			std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+			SendEnterTwice();
+			std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+			SimulateLeftClick(ptBaseButton.x, ptBaseButton.y);
+			
+		}
+
+		SafeArrayUnaccessData(psa3);
+	}
+	// Setting the cursor back where it was
+	SetCursorPos(ptCur.x,ptCur.y);
+
+	// End of DotMicPerson 
 	return hr;
 }
 

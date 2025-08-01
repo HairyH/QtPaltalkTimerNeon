@@ -54,6 +54,11 @@ wchar_t wcAppName[] = L"QtPaltalk Timer";
 
 #define msgba(h,x) MessageBoxA(h,x,szAppName,MB_OK)
 #define msgbw(h,x) MessageBoxW(h,x,wcAppName,MB_OK)
+//Quick Messagebox macro
+#define msga(x) msgba(ghMain,x)
+// Quick Messagebox WIDE String
+#define msgw(x) msgbw(ghMain,x)
+
 
 #define IDT_MICTIMER	5555
 #define IDT_MONITORTIMER	6666
