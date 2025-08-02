@@ -38,10 +38,10 @@ int giMicTimerSeconds = 0;
 int giInterval = 30;
 int giLimit = 120;
 // Nick related globals
-char gszSavedNick[MAX_PATH] = { '0' };
-char gszCurrentNick[MAX_PATH] = { '0' };
-char gszDotMicUser[MAX_PATH] = { '0' };
-wchar_t gwcRoomTitle[MAX_PATH] = { '0' };
+char gszSavedNick[MAX_PATH] = { '\0' };
+char gszCurrentNick[MAX_PATH] = { '\0' };
+char gszDotMicUser[MAX_PATH] = { '\0' };
+wchar_t gwcRoomTitle[MAX_PATH] = { '\0' };
 int iMaxNicks = 0;
 int iDrp = 0;
 // UIAutomation related globals
@@ -112,8 +112,7 @@ BOOL CALLBACK DlgMain(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 	break; // return TRUE;
 	case WM_CLOSE:
 	{
-		if (emojiTextEditElement)
-		   CoUninitialize();
+		CoUninitialize();
 		if (ghFntClk)
 			DeleteObject(ghFntClk);
 		EndDialog(hwndDlg, 0);
@@ -145,36 +144,36 @@ BOOL CALLBACK DlgMain(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		return TRUE;
 		case IDC_CHECK1: // Send text to Paltalk
 		{
-			gbSendTxt = IsDlgButtonChecked(ghMain, IDC_CHECK1);
+			gbSendTxt = IsDlgButtonChecked(hwndDlg, IDC_CHECK1);
 		}
 		return TRUE;
 		case IDC_CHECK2: // Send Mic time limit to Paltalk
 		{
-			gbSendLimit = IsDlgButtonChecked(ghMain, IDC_CHECK2);
+			gbSendLimit = IsDlgButtonChecked(hwndDlg, IDC_CHECK2);
 		}
 		return TRUE;
 		case IDC_CHECK_BOLD: // Send Bold text to Paltalk
 		{
-			gbSendBold = IsDlgButtonChecked(ghMain, IDC_CHECK_BOLD);
+			gbSendBold = IsDlgButtonChecked(hwndDlg, IDC_CHECK_BOLD);
 		}
 		return TRUE;
 		case IDM_BEEP: // enable/disable beeps
 		{
 			if (gbBeep)
 			{
-				CheckMenuItem(GetMenu(ghMain), IDM_BEEP, MF_UNCHECKED);
+				CheckMenuItem(GetMenu(hwndDlg), IDM_BEEP, MF_UNCHECKED);
 				gbBeep = FALSE;
 			}
 			else
 			{
-				CheckMenuItem(GetMenu(ghMain), IDM_BEEP, MF_CHECKED);
+				CheckMenuItem(GetMenu(hwndDlg), IDM_BEEP, MF_CHECKED);
 				gbBeep = TRUE;
 			}
 		}
 		return TRUE;
 		case IDC_CHECKDOT: // Set Auto Dotting 
 		{
-			gbAutoDot = IsDlgButtonChecked(ghMain, IDC_CHECKDOT);
+			gbAutoDot = IsDlgButtonChecked(hwndDlg, IDC_CHECKDOT);
 		}
 		return TRUE;
 		case IDC_COMBO_INTERVAL:
@@ -399,6 +398,9 @@ void MicTimerTick(void)
 	int iMin;
 	int iSec;
 
+	// Reset dotted mic user
+	sprintf_s(gszDotMicUser, MAX_PATH, "");
+	// Advance the Timer Seconds
 	giMicTimerSeconds++;
 
 	iMin = giMicTimerSeconds / iX;
@@ -437,6 +439,8 @@ void MicTimerTick(void)
 		}
 		if (gbSendLimit && gbAutoDot)
 		{
+			// If there is no current nick, nothing to do here, we return
+			if (strlen(gszCurrentNick) < 2) return;
 			// Sending to the room auto dot is coming 
 			sprintf_s(szMsg, MAX_PATH, "%s on Mic for: %d:%02d min. TIME LIMIT AUTO DOT!", gszCurrentNick, iMin, iSec);
 			CopyPaste2Paltalk(szMsg);
@@ -445,15 +449,14 @@ void MicTimerTick(void)
 			// Reset the timer
 			MicTimerReset(); // Reset the mic timer
 			// Reset saved nick
-			sprintf_s(gszSavedNick, "a"); // Reset the saved nick
-			//DotMicUser(gszDotMicUser); // Dot the mic user
+			sprintf_s(gszSavedNick, ""); // Reset the saved nick
 			// First call to dot
 			DotAndUnDotMicUser(gszDotMicUser);
 			Sleep(1000);
 			// Second call remove the dot 
 			DotAndUnDotMicUser(gszDotMicUser);
 			// Reset dotted mic user
-			sprintf_s(gszDotMicUser, MAX_PATH, "x1x1x1y2y2y2");
+			sprintf_s(gszDotMicUser, MAX_PATH, "");
 			
 			return; // No need to send text every second
 		}
@@ -493,10 +496,11 @@ void MonitorTimerTick(void)
 		sprintf_s(szTemp, "Mic dropout count %d \n", iDrp);
 		OutputDebugStringA(szTemp);
 
-		if (iDrp > 4) // 5 second dropout
+		if (iDrp > 3) // 5 second dropout
 		{
 			MicTimerReset(); //Stop the mic timing
-			sprintf_s(gszSavedNick, "a"); // Reset the saved nick
+			sprintf_s(gszSavedNick, ""); // Reset the saved nick
+
 			sprintf_s(szTemp, "5 dropouts: %d Reset Mic timer \n", iDrp);
 			OutputDebugStringA(szTemp);
 			iDrp = 0;
@@ -601,7 +605,7 @@ BOOL GetMicUser(void)
 		}
 		else
 		{
-			sprintf_s(gszCurrentNick, "a");
+			sprintf_s(gszCurrentNick, "");
 			bRet = FALSE;
 		}
 
@@ -649,8 +653,8 @@ void StartStopMonitoring(void)
 	else
 	{
 		KillTimer(ghMain, IDT_MONITORTIMER);
-		sprintf_s(gszSavedNick, "a");
-		sprintf_s(gszCurrentNick, "a");
+		sprintf_s(gszSavedNick, "");
+		sprintf_s(gszCurrentNick, "");
 		MicTimerReset();
 		gbMonitor = FALSE;
 		SendDlgItemMessageW(ghMain, IDC_BUTTON_START, WM_SETTEXT, 0, (LPARAM)L"Start Timing");
@@ -949,7 +953,7 @@ HRESULT __stdcall DotAndUnDotMicUser(char* szMicUser)
 				SendMessageA(ghPtMain, WM_CHAR, (WPARAM)szMicUser[i], 0);
 			}
 			// Wait to search 			
-			std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+			std::this_thread::sleep_for(std::chrono::milliseconds(500));
 		}
 		SafeArrayUnaccessData(psa2);
 	}
@@ -996,9 +1000,9 @@ HRESULT __stdcall DotAndUnDotMicUser(char* szMicUser)
 			elementRoom->SetFocus();
 			
 			SimulateRightClick(x, y);
-			std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+			std::this_thread::sleep_for(std::chrono::milliseconds(500));
 			SendEnterTwice();
-			std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+			std::this_thread::sleep_for(std::chrono::milliseconds(500));
 			SimulateLeftClick(ptBaseButton.x, ptBaseButton.y);
 			
 		}

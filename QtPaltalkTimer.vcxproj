@@ -155,8 +155,11 @@
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <Image Include="DialogueWin32AppTemplet.ico" />
-    <Image Include="small.ico" />
+    <Image Include="C:\Users\laci2\Downloads\Paltalk\paltalktimer.ico" />
+    <Image Include="icon1.ico" />
+    <Image Include="paltalkicon.png" />
+    <Image Include="paltalktimer.ico" />
+    <Image Include="paltalk_timer.ico" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="main.h" />

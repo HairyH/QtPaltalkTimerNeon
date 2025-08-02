@@ -15,10 +15,19 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <Image Include="small.ico">
+    <Image Include="icon1.ico">
       <Filter>Resource Files</Filter>
     </Image>
-    <Image Include="DialogueWin32AppTemplet.ico">
+    <Image Include="C:\Users\laci2\Downloads\Paltalk\paltalktimer.ico">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="paltalktimer.ico">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="paltalkicon.png">
+      <Filter>Resource Files</Filter>
+    </Image>
+    <Image Include="paltalk_timer.ico">
       <Filter>Resource Files</Filter>
     </Image>
   </ItemGroup>
