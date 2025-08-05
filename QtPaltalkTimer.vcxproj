@@ -155,10 +155,6 @@
     <ClCompile Include="main.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <Image Include="C:\Users\laci2\Downloads\Paltalk\paltalktimer.ico" />
-    <Image Include="icon1.ico" />
-    <Image Include="paltalkicon.png" />
-    <Image Include="paltalktimer.ico" />
     <Image Include="paltalk_timer.ico" />
   </ItemGroup>
   <ItemGroup>
@@ -167,6 +163,9 @@
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="resource.rc" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="Release\QtPaltalkTimerNeon.exe" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
