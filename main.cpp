@@ -17,9 +17,13 @@ HWND		ghInterval = 0;
 HWND		ghLimit = 0;
 HWND		ghClock = 0;
 HWND		ghCbSend = 0;
+
 // Debug related globals
+#ifdef DEBUG
 char gszDebugMsg[MAX_PATH] = { '\0' };
 wchar_t gwcDebugMsg[MAX_PATH] = { '\0' };
+#endif // DEBUG
+
 // Paltalk Handles
 HWND ghPtRoom = NULL, ghPtLv = NULL;
 
@@ -48,7 +52,6 @@ int iDrp = 0;
 CComPtr<IUIAutomationElement> emojiTextEditElement;
 CComPtr<IUIAutomationElement> automationElementRoom;
 CComPtr<IUIAutomation> g_pUIAutomation;
-
 
 // Function prototypes
 BOOL CALLBACK DlgMain(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
@@ -112,7 +115,7 @@ BOOL CALLBACK DlgMain(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 	break; // return TRUE;
 	case WM_CLOSE:
 	{
-		CoUninitialize();
+		// Cleaning up before exit
 		if (ghFntClk)
 			DeleteObject(ghFntClk);
 		EndDialog(hwndDlg, 0);
@@ -129,7 +132,8 @@ BOOL CALLBACK DlgMain(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		{
 		case IDCANCEL:
 		{
-			EndDialog(hwndDlg, 0);
+			// Calling WM_CLOSE to end it all
+			PostMessageA(hwndDlg, WM_CLOSE, 0, 0);
 		}
 		return TRUE;
 		case IDOK:
@@ -246,6 +250,7 @@ void GetPaltalkWindows(void)
 	// Initialise UIAutomation
 	if (FAILED(InitUIAutomation())) {
 		msga("Initializing UI Automation failed!");
+		return;
 	 }
 	// Getting the Emoji Text Edit control UIAutomation element to send text to Paltalk
 	HRESULT hr = GetUIAutomationElementFromHWNDAndClassName(ghPtMain, L"ui::controls::EmojiTextEdit", &emojiTextEditElement);
@@ -491,18 +496,21 @@ void MonitorTimerTick(void)
 	else if (strlen(gszCurrentNick) < 2 && strlen(gszSavedNick) > 2)
 	{
 		iDrp++; //to tolerate mic dropout
-
+#ifdef DEBUG
 		char szTemp[MAX_PATH] = { '\0' };
 		sprintf_s(szTemp, "Mic dropout count %d \n", iDrp);
 		OutputDebugStringA(szTemp);
-
+#endif // DEBUG
+		
 		if (iDrp > 3) // 5 second dropout
 		{
 			MicTimerReset(); //Stop the mic timing
 			sprintf_s(gszSavedNick, ""); // Reset the saved nick
-
+#ifdef DEBUG
 			sprintf_s(szTemp, "5 dropouts: %d Reset Mic timer \n", iDrp);
 			OutputDebugStringA(szTemp);
+#endif // DEBUG
+					
 			iDrp = 0;
 		}
 	}
@@ -519,10 +527,10 @@ void MonitorTimerTick(void)
 		int iLimitSec = giLimit % 60;
 		sprintf_s(szMsg, "Start: %s on a %d:%02d min. Mic Session", gszCurrentNick, iLimitMin, iLimitSec);
 		CopyPaste2Paltalk(szMsg);
-
+#ifdef DEBUG
 		sprintf_s(szMsg, "Start: %s at: %02d:%02d:%02d UTC\n", gszCurrentNick, sytUtc.wHour, sytUtc.wMinute, sytUtc.wSecond);
 		OutputDebugStringA(szMsg);
-
+#endif // DEBUG
 		strcpy_s(gszSavedNick, gszCurrentNick);
 	}
 }
@@ -759,8 +767,10 @@ HRESULT __stdcall GetUIAutomationElementFromHWNDAndClassName(HWND hwnd, const wc
 	CComPtr<IUIAutomationElement> elementRoom;
 	hr = g_pUIAutomation->ElementFromHandle(hwnd, &elementRoom);
 	if (FAILED(hr)) {
+#ifdef DEBUG
 		char szDebug[] = "ElementFromHandle failed: elementRoom\n";
 		OutputDebugStringA(szDebug);
+#endif // DEBUG
 		return hr;
 	}
 
@@ -768,15 +778,21 @@ HRESULT __stdcall GetUIAutomationElementFromHWNDAndClassName(HWND hwnd, const wc
 	CComVariant classNameVariant(className);
 	hr = g_pUIAutomation->CreatePropertyCondition(UIA_ClassNamePropertyId, classNameVariant, &classNameCondition);
 	if (FAILED(hr)) {
+#ifdef DEBUG
 		char szDebug[] = "CreatePropertyCondition failed : className\n";
 		OutputDebugStringA(szDebug);
+#endif // DEBUG
+
 		return hr;
 	}
 
 	hr = elementRoom->FindFirst(TreeScope_Subtree, classNameCondition, foundElement);
 	if (FAILED(hr)) {
+#ifdef DEBUG
 		char szDebug[] = "FindFirst failed: elementRoom\n";
 		OutputDebugStringA(szDebug);
+#endif // DEBUG
+
 		return hr;
 	}
 
@@ -791,8 +807,10 @@ HRESULT __stdcall FindWindowByTitle(const std::wstring& title, IUIAutomationElem
 	CComPtr<IUIAutomationElement> root = nullptr; // Desktop
 	hr = g_pUIAutomation->GetRootElement(&root);
 	if (FAILED(hr)) {
+#ifdef DEBUG
 		swprintf_s(gwcDebugMsg, MAX_PATH, L"Error getting root element");
 		OutputDebugStringW(gwcDebugMsg);
+#endif // DEBUG
 		return hr;
 	}
 
@@ -802,8 +820,10 @@ HRESULT __stdcall FindWindowByTitle(const std::wstring& title, IUIAutomationElem
 		
 	hr = root->FindFirst(TreeScope_Children, cond, outElement);
 	if (FAILED(hr)) {
+#ifdef DEBUG
 		sprintf_s(gszDebugMsg, MAX_PATH, "Failed to find the Room!");
 		OutputDebugStringA(gszDebugMsg);
+#endif // DEBUG
 		return hr;
 	}
 			
@@ -816,9 +836,10 @@ HRESULT __stdcall InitUIAutomation(void)
 	HRESULT hr = S_OK;
 	hr = CoCreateInstance(__uuidof(CUIAutomation), NULL, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&g_pUIAutomation));
 	if (FAILED(hr)) {
+#ifdef DEBUG
 		sprintf_s(gszDebugMsg, MAX_PATH, "CoCreateInstance failed: 0x%008X", hr);
 		OutputDebugStringA(gszDebugMsg);
-		CoUninitialize();
+#endif // DEBUG
 		return hr;
 	}
 	return S_OK;
@@ -866,8 +887,10 @@ HRESULT __stdcall DotAndUnDotMicUser(char* szMicUser)
 	std::wstring strRoomTitle(gwcRoomTitle);
 	hr = FindWindowByTitle(strRoomTitle, &elementRoom);
 	if (FAILED(hr)) {
-	    char szDebug[] = "ElementFromHandle failed: elementRoom\n";
+#ifdef DEBUG
+		char szDebug[] = "ElementFromHandle failed: elementRoom\n";
 		OutputDebugStringA(szDebug);
+#endif // DEBUG
 		return hr;
 	}
 
@@ -877,8 +900,10 @@ HRESULT __stdcall DotAndUnDotMicUser(char* szMicUser)
 	CComPtr<IUIAutomation> automation = nullptr;
 	hr = CoCreateInstance(__uuidof(CUIAutomation), nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&automation));
 	if (FAILED(hr)) {
+#ifdef DEBUG
 		swprintf_s(gwcDebugMsg, MAX_PATH, L"creating automation failed!\n");
 		OutputDebugStringW(gwcRoomTitle);
+#endif // DEBUG
 		return hr;
 	}
 	// Finding the mic queue title widget element
@@ -887,14 +912,18 @@ HRESULT __stdcall DotAndUnDotMicUser(char* szMicUser)
 	CComVariant ClassNameVariant(L"ui::rooms::member_list::MicQueueTitleItemWidget");
 	// Setting up class name condition for TitleWidget
 	if (FAILED(automation->CreatePropertyCondition(UIA_ClassNamePropertyId, ClassNameVariant, &classCondTitleItem))) {
+#ifdef DEBUG
 		swprintf_s(gwcDebugMsg, MAX_PATH, L"TitleWidget Condition Failed!\n");
 		OutputDebugStringW(gwcRoomTitle);
+#endif // DEBUG
 		return hr;
 	}
 	// Getting the micQueueTitleEl element
 	if (FAILED(elementRoom->FindFirst(TreeScope_Descendants, classCondTitleItem, &micQueueTitleEl))) {
+#ifdef DEBUG
 		swprintf_s(gwcDebugMsg, MAX_PATH, L"creating automation failed!\n");
 		OutputDebugStringW(gwcRoomTitle);
+#endif // DEBUG
 		return hr;
 	}
 	// Finding the Base Button element by class name
@@ -904,14 +933,18 @@ HRESULT __stdcall DotAndUnDotMicUser(char* szMicUser)
 	
 	// Setting up the condition for base button 
 	if (FAILED(g_pUIAutomation->CreatePropertyCondition(UIA_ClassNamePropertyId, BaseButtonVariant, &condBaseButton))) {
+#ifdef DEBUG
 		swprintf_s(gwcDebugMsg, MAX_PATH, L"Failed to create BaseButton Condition!\n");
 		OutputDebugStringW(gwcRoomTitle);
+#endif // DEBUG
 		return hr;
 	}
 	// Get the baseButton element
 	if (FAILED(micQueueTitleEl->FindFirst(TreeScope_Descendants, condBaseButton, &baseButtonEl))) {
+#ifdef DEBUG
 		swprintf_s(gwcDebugMsg, MAX_PATH, L"Failed to create BaseButton Condition!\n");
 		OutputDebugStringW(gwcRoomTitle);
+#endif // DEBUG
 		return hr;
 	}
 	//Now we got the BaseButton element
@@ -938,10 +971,11 @@ HRESULT __stdcall DotAndUnDotMicUser(char* szMicUser)
 			int y = (r.top + (r.bottom / 2));
 			ptBaseButton.x = x;
 			ptBaseButton.y = y;
-
+#ifdef DEBUG
 			sprintf_s(gszDebugMsg, MAX_PATH, "X position = %d Y position = %d\n", x, y);
 			OutputDebugStringA(gszDebugMsg);
-
+#endif // DEBUG
+			
 			baseButtonEl->SetFocus();
 
 			// Activate the user list search box
@@ -963,14 +997,18 @@ HRESULT __stdcall DotAndUnDotMicUser(char* szMicUser)
 	CComVariant vcondMemberItem(L"ui::rooms::member_list::MemberItemWidget");
 	// Setting up the condition for memberItemEl
 	if (FAILED(automation->CreatePropertyCondition(UIA_ClassNamePropertyId, vcondMemberItem, &condMemberItem))) {
+#ifdef DEBUG
 		swprintf_s(gwcDebugMsg, MAX_PATH, L"Failed to create MemberItemWidget Condition!\n");
 		OutputDebugStringW(gwcRoomTitle);
+#endif // DEBUG
 		return hr;
 	}
 	// Get the memberItemEl element
 	if (FAILED(elementRoom->FindFirst(TreeScope_Descendants, condMemberItem, &memberItemEl))) {
+#ifdef DEBUG
 		swprintf_s(gwcDebugMsg, MAX_PATH, L"Failed to create MemberItemWidget Condition!\n");
 		OutputDebugStringW(gwcRoomTitle);
+#endif // DEBUG
 		return hr;
 	}
 	
@@ -993,10 +1031,10 @@ HRESULT __stdcall DotAndUnDotMicUser(char* szMicUser)
 
 			int x = (r.left + (r.right / 2));
 			int y = (r.top + (r.bottom / 2));
-
+#ifdef DEBUG
 			sprintf_s(gszDebugMsg, MAX_PATH, "X: %d Y: %d   memberItemEl\n", x, y);
 			OutputDebugStringA(gszDebugMsg);
-
+#endif // DEBUG
 			elementRoom->SetFocus();
 			
 			SimulateRightClick(x, y);
@@ -1011,7 +1049,6 @@ HRESULT __stdcall DotAndUnDotMicUser(char* szMicUser)
 	}
 	// Setting the cursor back where it was
 	SetCursorPos(ptCur.x,ptCur.y);
-
 	// End of DotMicPerson 
 	return hr;
 }

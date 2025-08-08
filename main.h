@@ -34,7 +34,6 @@
 #include <iterator> // Add this include for std::begin and std::end
 #include <cwctype> // Add this include for std::iswlower and std::iswupper
 
-
 // Resource Header
 #include "resource1.h"
 
@@ -63,18 +62,4 @@ wchar_t wcAppName[] = L"QtPaltalk Timer";
 #define IDT_MICTIMER	5555
 #define IDT_MONITORTIMER	6666
 #define IDM_BEEP		5556
-// Writes  strings (char*) to debug window
-void OutputErrorDebugStringA(char* szError) {
-	int iLen = strlen(szError);
-	if (iLen > MAX_PATH) return;
-	char szOut[MAX_PATH] = { 0 };
-	sprintf_s(szOut, MAX_PATH, "Error: %s \n", szError);
-	OutputDebugStringA(szOut);
-}
-// Writes wide Strings (wchar_t*) to debug window
-void OutputErrorDebugStringW(wchar_t* wcError) {
-	int iLen = wcslen(wcError);
-	if (iLen > MAX_PATH) return;
-	wchar_t wcOut[MAX_PATH] = { 0 };
-	swprintf_s(wcOut, MAX_PATH, L"Error: %s \n", wcError);
-}
+// End of main.h
