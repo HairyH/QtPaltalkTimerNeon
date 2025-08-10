@@ -79,18 +79,36 @@ static void SendEnterTwice();
 HRESULT __stdcall DotAndUnDotMicUser(char* szMicUser);
 
 /// Main entry point of the app 
-int APIENTRY WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance, _In_ LPSTR lpCmdLine, _In_ int nShowCmd)
+int APIENTRY WinMain(_In_ HINSTANCE hInstance,
+	_In_opt_ HINSTANCE hPrevInstance,
+	_In_ LPSTR lpCmdLine,
+	_In_ int nShowCmd)
 {
 	hInst = hInstance;
 	InitCommonControls();
 	LoadLibraryW(L"riched20.dll"); // comment if richedit is not used
-	// TODO: Add any initiations as needed
-	HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED); // For STA
+
+	OutputDebugStringA("[COM] Attempting to initialize COM...\n");
+	HRESULT hr = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
 	if (FAILED(hr)) {
+		char szMsg[128];
+		sprintf_s(szMsg, sizeof(szMsg), "[COM] CoInitializeEx FAILED! HRESULT=0x%08X\n", hr);
+		OutputDebugStringA(szMsg);
 		msga("CoInitializeEx Failed!");
 		return 2;
 	}
-	return DialogBox(hInst, MAKEINTRESOURCE(IDD_DLGMAIN), NULL, (DLGPROC)DlgMain);
+	else {
+		OutputDebugStringA("[COM] COM initialized successfully (STA mode).\n");
+	}
+
+	// Run the main dialog
+	INT_PTR ret = DialogBox(hInst, MAKEINTRESOURCE(IDD_DLGMAIN), NULL, (DLGPROC)DlgMain);
+
+	OutputDebugStringA("[COM] Uninitializing COM...\n");
+	CoUninitialize();
+	OutputDebugStringA("[COM] COM uninitialized.\n");
+
+	return (int)ret;
 }
 
 /// Callback main message loop for the Application
@@ -223,7 +241,6 @@ BOOL CALLBACK DlgMain(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 	}
 	return FALSE;
 }
-
 /// Initialise Paltalk Control Handles
 void GetPaltalkWindows(void)
 {
@@ -377,7 +394,6 @@ BOOL InitClockDis(void)
 
 	return TRUE;
 }
-
 /// Starts the Mic timer
 void MicTimerStart(void)
 {
@@ -534,7 +550,6 @@ void MonitorTimerTick(void)
 		strcpy_s(gszSavedNick, gszCurrentNick);
 	}
 }
-
 /// Get the Mic user
 BOOL GetMicUser(void)
 {
@@ -705,7 +720,6 @@ void CopyPaste2Paltalk(char* szMsg)
 	}
 
 }
-
 /// Convert the string to bold
 wstring ConvertToBold(const wstring& inString) {
 	const int boldLowercaseOffset = 119737; // 'a' to bold 'a'
@@ -798,7 +812,6 @@ HRESULT __stdcall GetUIAutomationElementFromHWNDAndClassName(HWND hwnd, const wc
 
 	return S_OK;
 }
-
 /// Find the Chat window by title
 HRESULT __stdcall FindWindowByTitle(const std::wstring& title, IUIAutomationElement** outElement)
 {
@@ -829,36 +842,35 @@ HRESULT __stdcall FindWindowByTitle(const std::wstring& title, IUIAutomationElem
 			
 	return hr; 
 }
-
 /// Initialize UI Automation
 HRESULT __stdcall InitUIAutomation(void)
 {
-	HRESULT hr = S_OK;
-	hr = CoCreateInstance(__uuidof(CUIAutomation), NULL, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&g_pUIAutomation));
+	OutputDebugStringA("[UIAutomation] Creating CUIAutomation instance...\n");
+	HRESULT hr = CoCreateInstance(__uuidof(CUIAutomation), NULL,
+		CLSCTX_INPROC_SERVER,
+		IID_PPV_ARGS(&g_pUIAutomation));
 	if (FAILED(hr)) {
-#ifdef DEBUG
-		sprintf_s(gszDebugMsg, MAX_PATH, "CoCreateInstance failed: 0x%008X", hr);
-		OutputDebugStringA(gszDebugMsg);
-#endif // DEBUG
-		return hr;
+		char szMsg[128];
+		sprintf_s(szMsg, sizeof(szMsg), "[UIAutomation] CoCreateInstance FAILED! HRESULT=0x%08X\n", hr);
+		OutputDebugStringA(szMsg);
+		return hr; 
 	}
+
+	OutputDebugStringA("[UIAutomation] CUIAutomation instance created successfully.\n");
 	return S_OK;
 }
-
 /// Simulate mouse right click
 static void SimulateRightClick(int x, int y) {
 	SetCursorPos(x, y);
 	mouse_event(MOUSEEVENTF_RIGHTDOWN, x, y, 0, 0);
 	mouse_event(MOUSEEVENTF_RIGHTUP, x, y, 0, 0);
 }
-
 /// Simulate mouse left click
 static void SimulateLeftClick(int x, int y) {
 	SetCursorPos(x, y);
 	mouse_event(MOUSEEVENTF_LEFTDOWN, x, y, 0, 0);
 	mouse_event(MOUSEEVENTF_LEFTUP, x, y, 0, 0);
 }
-
 /// Simulate Enter button press twice
 static void SendEnterTwice() {
 	INPUT input[2] = {};
@@ -873,7 +885,6 @@ static void SendEnterTwice() {
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 	}
 }
-
 /// New doting mic user function
 HRESULT __stdcall DotAndUnDotMicUser(char* szMicUser)
 {
@@ -1042,7 +1053,6 @@ HRESULT __stdcall DotAndUnDotMicUser(char* szMicUser)
 			SendEnterTwice();
 			std::this_thread::sleep_for(std::chrono::milliseconds(500));
 			SimulateLeftClick(ptBaseButton.x, ptBaseButton.y);
-			
 		}
 
 		SafeArrayUnaccessData(psa3);
