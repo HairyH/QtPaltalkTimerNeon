@@ -5,7 +5,7 @@
 #include "main.h"
 
 using namespace std;
-//#undef DEBUG
+#undef DEBUG
 //#define DEBUG
 
 // Global Variables
@@ -521,7 +521,7 @@ void MicTimerTick(void)
 	}
 }
 /// Every sec checks mic user
-#undef DEBUG
+//#undef DEBUG
 void MonitorTimerTick(void)
 {
 	GetMicUser();
@@ -669,7 +669,7 @@ BOOL GetMicUser(void)
 
 	return bRet;
 }
-#define DEBUG
+//#define DEBUG
 /// Make popup menu for beep
 void CreateContextMenu(WPARAM wParam, LPARAM lparam)
 {
