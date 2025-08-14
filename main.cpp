@@ -5,7 +5,7 @@
 #include "main.h"
 
 using namespace std;
-#undef DEBUG
+//#undef DEBUG
 //#define DEBUG
 
 // Global Variables
@@ -57,6 +57,7 @@ CComPtr<IUIAutomation> g_pUIAutomation;
 BOOL CALLBACK DlgMain(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam);
 void GetPaltalkWindows(void);
 BOOL CALLBACK EnumPaltalkWindows(HWND hWnd, LPARAM lParam);
+void RestoreAndBringToFront(HWND hWnd);
 BOOL InitClockDis(void);
 BOOL InitIntervals(void);
 BOOL InitMicLimits(void);
@@ -71,6 +72,7 @@ wstring ConvertToBold(const wstring& inString);
 void CopyPaste2Paltalk(char* szMsg);
 // UIAutomation and Dot Mic User related functions
 HRESULT __stdcall InitUIAutomation(void);
+HRESULT __stdcall UninitUIAutomation(void);
 HRESULT __stdcall GetUIAutomationElementFromHWNDAndClassName(HWND hwnd, const wchar_t* className, IUIAutomationElement** foundElement);
 HRESULT __stdcall FindWindowByTitle(const std::wstring& title, IUIAutomationElement** outElement);
 static void SimulateRightClick(int x, int y);
@@ -103,12 +105,8 @@ int APIENTRY WinMain(_In_ HINSTANCE hInstance,
 
 	// Run the main dialog
 	INT_PTR ret = DialogBox(hInst, MAKEINTRESOURCE(IDD_DLGMAIN), NULL, (DLGPROC)DlgMain);
-
-	OutputDebugStringA("[COM] Uninitializing COM...\n");
-	CoUninitialize();
-	OutputDebugStringA("[COM] COM uninitialized.\n");
-
-	return (int)ret;
+		
+	return 0;
 }
 
 /// Callback main message loop for the Application
@@ -134,11 +132,10 @@ BOOL CALLBACK DlgMain(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 	case WM_CLOSE:
 	{
 		// Cleaning up before exit
-		if (ghFntClk)
-			DeleteObject(ghFntClk);
-		EndDialog(hwndDlg, 0);
+		UninitUIAutomation();
+		EndDialog(hwndDlg,IDCANCEL);
 	}
-	return TRUE;
+	break;
 	case WM_CONTEXTMENU:
 	{
 		CreateContextMenu(wParam, lParam);
@@ -150,8 +147,9 @@ BOOL CALLBACK DlgMain(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		{
 		case IDCANCEL:
 		{
-			// Calling WM_CLOSE to end it all
-			PostMessageA(hwndDlg, WM_CLOSE, 0, 0);
+			// Cleaning up before exit
+			UninitUIAutomation();
+			EndDialog(hwndDlg, IDCANCEL);
 		}
 		return TRUE;
 		case IDOK:
@@ -235,9 +233,9 @@ BOOL CALLBACK DlgMain(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 			MonitorTimerTick();
 		}
 	}
-
+	return TRUE;
 	default:
-		return FALSE;
+		return DefWindowProc(hwndDlg, uMsg, wParam, lParam);
 	}
 	return FALSE;
 }
@@ -471,11 +469,37 @@ void MicTimerTick(void)
 			MicTimerReset(); // Reset the mic timer
 			// Reset saved nick
 			sprintf_s(gszSavedNick, ""); // Reset the saved nick
+			// Make sure we have Paltalk main window in focus
+			RestoreAndBringToFront(ghPtMain);
+			Sleep(1000); // Give some time for the window to come into focus
 			// First call to dot
-			DotAndUnDotMicUser(gszDotMicUser);
+			HRESULT hr = DotAndUnDotMicUser(gszDotMicUser);
+			if (FAILED(hr))
+			{
+#ifdef DEBUG
+				char szErrMsg[MAX_PATH] = { '\0' };
+				sprintf_s(szErrMsg, "DotAndUnDotMicUser Dot failed: %08X\n", hr);
+				OutputDebugStringA(szErrMsg);
+#endif // DEBUG
+				sprintf_s(szMsg, MAX_PATH, "ADMINS ALERT: AUTO DOT FAILED! on %s RESTARTING the TIMER!", gszDotMicUser);
+				CopyPaste2Paltalk(szMsg);
+				sprintf_s(gszDotMicUser, MAX_PATH, "");
+				return;
+			}
 			Sleep(1000);
 			// Second call remove the dot 
-			DotAndUnDotMicUser(gszDotMicUser);
+			hr = DotAndUnDotMicUser(gszDotMicUser);
+			if(FAILED(hr))
+			{
+#ifdef DEBUG
+				char szErrMsg[MAX_PATH] = { '\0' };
+				sprintf_s(szErrMsg, "DotAndUnDotMicUser Undot failed: %08X\n", hr);
+				OutputDebugStringA(szErrMsg);
+#endif // DEBUG
+
+				sprintf_s(szMsg, MAX_PATH, "ADMINS ALERT: AUTO UNDOT FAILED! on %s RESTARTING the TIMER!", gszDotMicUser);
+				CopyPaste2Paltalk(szMsg);
+			}
 			// Reset dotted mic user
 			sprintf_s(gszDotMicUser, MAX_PATH, "");
 			
@@ -496,8 +520,8 @@ void MicTimerTick(void)
 		CopyPaste2Paltalk(szMsg);
 	}
 }
-
 /// Every sec checks mic user
+#undef DEBUG
 void MonitorTimerTick(void)
 {
 	GetMicUser();
@@ -550,6 +574,7 @@ void MonitorTimerTick(void)
 		strcpy_s(gszSavedNick, gszCurrentNick);
 	}
 }
+
 /// Get the Mic user
 BOOL GetMicUser(void)
 {
@@ -644,7 +669,7 @@ BOOL GetMicUser(void)
 
 	return bRet;
 }
-
+#define DEBUG
 /// Make popup menu for beep
 void CreateContextMenu(WPARAM wParam, LPARAM lparam)
 {
@@ -859,6 +884,47 @@ HRESULT __stdcall InitUIAutomation(void)
 	OutputDebugStringA("[UIAutomation] CUIAutomation instance created successfully.\n");
 	return S_OK;
 }
+HRESULT __stdcall UninitUIAutomation(void)
+{
+	if (ghFntClk)
+		DeleteObject(ghFntClk);
+
+	if (g_pUIAutomation) {
+		g_pUIAutomation.Release();
+		OutputDebugStringA("[UIAutomation] CUIAutomation instance released.\n");
+		return S_OK;
+	}
+	else {
+		OutputDebugStringA("[UIAutomation] CUIAutomation instance was not initialized.\n");
+	}
+	// If we reach here, it means the instance was not created or already released.
+
+	if(automationElementRoom) {
+		automationElementRoom.Release();
+		OutputDebugStringA("[UIAutomation] automationElementRoom released.\n");
+	}
+	else{
+		OutputDebugStringA("[UIAutomation] automationElementRoom was not initialized.\n");
+	}
+	// If we reach here, it means the instance was not created or already released.
+
+	if(emojiTextEditElement) {
+		emojiTextEditElement.Release();
+		OutputDebugStringA("[UIAutomation] emojiTextEditElement released.\n");
+	}
+	else {
+		OutputDebugStringA("[UIAutomation] emojiTextEditElement was not initialized.\n");
+	}
+	// If we reach here, it means the instance was not created or already released.
+
+	OutputDebugStringA("[COM] Uninitializing COM...\n");
+
+	CoUninitialize();
+
+	OutputDebugStringA("[COM] COM uninitialized.\n");
+
+	return E_NOTIMPL; 
+}
 /// Simulate mouse right click
 static void SimulateRightClick(int x, int y) {
 	SetCursorPos(x, y);
@@ -897,66 +963,60 @@ HRESULT __stdcall DotAndUnDotMicUser(char* szMicUser)
 	CComPtr<IUIAutomationElement> elementRoom = nullptr;
 	std::wstring strRoomTitle(gwcRoomTitle);
 	hr = FindWindowByTitle(strRoomTitle, &elementRoom);
-	if (FAILED(hr)) {
+	if (elementRoom == nullptr) {
 #ifdef DEBUG
-		char szDebug[] = "ElementFromHandle failed: elementRoom\n";
-		OutputDebugStringA(szDebug);
+		swprintf_s(gwcDebugMsg, MAX_PATH, L"FindWindowByTitle failed: %s\n", strRoomTitle.c_str());
+		OutputDebugStringW(gwcDebugMsg);
 #endif // DEBUG
-		return hr;
+		return E_FAIL; // Return an error if the room element is not found
 	}
 
 	elementRoom->SetFocus();
 	GetCursorPos(&ptCur);
 
-	CComPtr<IUIAutomation> automation = nullptr;
-	hr = CoCreateInstance(__uuidof(CUIAutomation), nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&automation));
-	if (FAILED(hr)) {
-#ifdef DEBUG
-		swprintf_s(gwcDebugMsg, MAX_PATH, L"creating automation failed!\n");
-		OutputDebugStringW(gwcRoomTitle);
-#endif // DEBUG
-		return hr;
-	}
 	// Finding the mic queue title widget element
 	CComPtr<IUIAutomationElement> micQueueTitleEl;
 	CComPtr<IUIAutomationCondition> classCondTitleItem;
 	CComVariant ClassNameVariant(L"ui::rooms::member_list::MicQueueTitleItemWidget");
 	// Setting up class name condition for TitleWidget
-	if (FAILED(automation->CreatePropertyCondition(UIA_ClassNamePropertyId, ClassNameVariant, &classCondTitleItem))) {
+	hr = g_pUIAutomation->CreatePropertyCondition(UIA_ClassNamePropertyId, ClassNameVariant, &classCondTitleItem);
+	if (classCondTitleItem == nullptr) {
 #ifdef DEBUG
 		swprintf_s(gwcDebugMsg, MAX_PATH, L"TitleWidget Condition Failed!\n");
-		OutputDebugStringW(gwcRoomTitle);
+		OutputDebugStringW(gwcDebugMsg);
 #endif // DEBUG
-		return hr;
+		return E_FAIL;
 	}
 	// Getting the micQueueTitleEl element
-	if (FAILED(elementRoom->FindFirst(TreeScope_Descendants, classCondTitleItem, &micQueueTitleEl))) {
+	hr = elementRoom->FindFirst(TreeScope_Descendants, classCondTitleItem, &micQueueTitleEl);
+	if (micQueueTitleEl == nullptr) {
 #ifdef DEBUG
-		swprintf_s(gwcDebugMsg, MAX_PATH, L"creating automation failed!\n");
-		OutputDebugStringW(gwcRoomTitle);
+		swprintf_s(gwcDebugMsg, MAX_PATH, L"Getting the micQueueTitleEl element  failed!\n");
+		OutputDebugStringW(gwcDebugMsg);
 #endif // DEBUG
-		return hr;
+		return E_FAIL;
 	}
 	// Finding the Base Button element by class name
 	CComPtr<IUIAutomationElement> baseButtonEl;
 	CComPtr<IUIAutomationCondition> condBaseButton;
 	CComVariant BaseButtonVariant(L"qtctrl::BaseButton");
-	
 	// Setting up the condition for base button 
-	if (FAILED(g_pUIAutomation->CreatePropertyCondition(UIA_ClassNamePropertyId, BaseButtonVariant, &condBaseButton))) {
+	hr = g_pUIAutomation->CreatePropertyCondition(UIA_ClassNamePropertyId, BaseButtonVariant, &condBaseButton);
+	if (condBaseButton == nullptr) {
 #ifdef DEBUG
 		swprintf_s(gwcDebugMsg, MAX_PATH, L"Failed to create BaseButton Condition!\n");
-		OutputDebugStringW(gwcRoomTitle);
+		OutputDebugStringW(gwcDebugMsg);
 #endif // DEBUG
-		return hr;
+		return E_FAIL;
 	}
-	// Get the baseButton element
-	if (FAILED(micQueueTitleEl->FindFirst(TreeScope_Descendants, condBaseButton, &baseButtonEl))) {
+	// We are looking for the BaseButton element inside the micQueueTitleEl
+	hr = micQueueTitleEl->FindFirst(TreeScope_Descendants, condBaseButton, &baseButtonEl);
+	if (baseButtonEl == nullptr) {
 #ifdef DEBUG
-		swprintf_s(gwcDebugMsg, MAX_PATH, L"Failed to create BaseButton Condition!\n");
-		OutputDebugStringW(gwcRoomTitle);
+		swprintf_s(gwcDebugMsg, MAX_PATH, L"Failed to Find BaseButton element!\n");
+		OutputDebugStringW(gwcDebugMsg);
 #endif // DEBUG
-		return hr;
+		return E_FAIL;
 	}
 	//Now we got the BaseButton element
 	
@@ -1007,20 +1067,22 @@ HRESULT __stdcall DotAndUnDotMicUser(char* szMicUser)
 	CComPtr<IUIAutomationCondition> condMemberItem;
 	CComVariant vcondMemberItem(L"ui::rooms::member_list::MemberItemWidget");
 	// Setting up the condition for memberItemEl
-	if (FAILED(automation->CreatePropertyCondition(UIA_ClassNamePropertyId, vcondMemberItem, &condMemberItem))) {
+	hr = g_pUIAutomation->CreatePropertyCondition(UIA_ClassNamePropertyId, vcondMemberItem, &condMemberItem);
+	if (condMemberItem == nullptr) {
 #ifdef DEBUG
 		swprintf_s(gwcDebugMsg, MAX_PATH, L"Failed to create MemberItemWidget Condition!\n");
 		OutputDebugStringW(gwcRoomTitle);
 #endif // DEBUG
-		return hr;
+		return E_FAIL;
 	}
-	// Get the memberItemEl element
-	if (FAILED(elementRoom->FindFirst(TreeScope_Descendants, condMemberItem, &memberItemEl))) {
+	// We are looking for the MemberItemWidget element inside the room
+	hr = elementRoom->FindFirst(TreeScope_Descendants, condMemberItem, &memberItemEl);
+	if (memberItemEl == nullptr) {
 #ifdef DEBUG
 		swprintf_s(gwcDebugMsg, MAX_PATH, L"Failed to create MemberItemWidget Condition!\n");
 		OutputDebugStringW(gwcRoomTitle);
 #endif // DEBUG
-		return hr;
+		return E_FAIL;
 	}
 	
 	// Getting the bounding rect of member item.
@@ -1062,5 +1124,37 @@ HRESULT __stdcall DotAndUnDotMicUser(char* szMicUser)
 	// End of DotMicPerson 
 	return hr;
 }
+
+// Restore the window and bring it to the front
+void RestoreAndBringToFront(HWND hWnd)
+{
+	if (!IsWindow(hWnd))
+		return;
+
+	// Restore if minimized
+	if (IsIconic(hWnd))
+		ShowWindow(hWnd, SW_RESTORE);
+
+	// Get current foreground window
+	HWND hForeground = GetForegroundWindow();
+	if (hForeground == hWnd)
+		return; // already in front
+
+	// Get thread IDs
+	DWORD dwFgThread = GetWindowThreadProcessId(hForeground, NULL);
+	DWORD dwOurThread = GetCurrentThreadId();
+
+	// Temporarily attach input
+	AttachThreadInput(dwOurThread, dwFgThread, TRUE);
+
+	// Bring to front
+	SetForegroundWindow(hWnd);
+	BringWindowToTop(hWnd);
+	SetFocus(hWnd);
+
+	// Detach input
+	AttachThreadInput(dwOurThread, dwFgThread, FALSE);
+}
+
 
 // End of File
