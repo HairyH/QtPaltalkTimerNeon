@@ -469,37 +469,62 @@ void MicTimerTick(void)
 			MicTimerReset(); // Reset the mic timer
 			// Reset saved nick
 			sprintf_s(gszSavedNick, ""); // Reset the saved nick
+
 			// Make sure we have Paltalk main window in focus
-			RestoreAndBringToFront(ghPtRoom);
+			RestoreAndBringToFront(ghPtMain);
 			Sleep(1000); // Give some time for the window to come into focus
 			// First call to dot
 			HRESULT hr = DotAndUnDotMicUser(gszDotMicUser);
-			if (FAILED(hr))
+			if (hr == E_NOTIMPL)
+			{
+#ifdef DEBUG
+				char szErrMsg[MAX_PATH] = { '\0' };
+				sprintf_s(szErrMsg, "DotAndUnDotMicUser Dot failed USER not found: %08X\n", hr);
+				OutputDebugStringA(szErrMsg);
+#endif // DEBUG
+				//sprintf_s(szMsg, MAX_PATH, "TIMER ADMIN ALERT: AUTO DOT FAILED! USER %s USER NOT FOUND!", gszDotMicUser);
+				//CopyPaste2Paltalk(szMsg);
+				sprintf_s(gszDotMicUser, MAX_PATH, "");
+				return;
+			}
+			else if (FAILED(hr))
 			{
 #ifdef DEBUG
 				char szErrMsg[MAX_PATH] = { '\0' };
 				sprintf_s(szErrMsg, "DotAndUnDotMicUser Dot failed: %08X\n", hr);
 				OutputDebugStringA(szErrMsg);
 #endif // DEBUG
-				sprintf_s(szMsg, MAX_PATH, "ADMINS ALERT: AUTO DOT FAILED! on %s RESTARTING the TIMER!", gszDotMicUser);
+				sprintf_s(szMsg, MAX_PATH, "ALERT: AUTO DOT FAILED! on %s | Stopping Auto Dotting | RESTART the TIMER!", gszDotMicUser);
 				CopyPaste2Paltalk(szMsg);
 				sprintf_s(gszDotMicUser, MAX_PATH, "");
+				// Stop the Auto Dot Mic User
+				SendDlgItemMessageW(ghMain, IDC_CHECKDOT, BM_SETCHECK, (WPARAM)BST_UNCHECKED, 0);
+				gbAutoDot = FALSE; // Disable auto dotting
 				return;
 			}
 			Sleep(1000);
 			// Second call remove the dot 
 			hr = DotAndUnDotMicUser(gszDotMicUser);
-			if(FAILED(hr))
+			if(hr == E_NOTIMPL)
 			{
-#ifdef DEBUG
+				// If the DotAndUnDotMicUser returns E_NOTIMPL, it means the mic user is not found
+				sprintf_s(szMsg, MAX_PATH, "ADMIN ALERT: AUTO UNDOT FAILED! User %s  may has left the room dotted!", gszDotMicUser);
+				CopyPaste2Paltalk(szMsg);
+			}
+			else if(FAILED(hr)) 
+			{ 
+#ifdef DEBUG			
 				char szErrMsg[MAX_PATH] = { '\0' };
 				sprintf_s(szErrMsg, "DotAndUnDotMicUser Undot failed: %08X\n", hr);
 				OutputDebugStringA(szErrMsg);
 #endif // DEBUG
-
-				sprintf_s(szMsg, MAX_PATH, "ADMINS ALERT: AUTO UNDOT FAILED! on %s RESTARTING the TIMER!", gszDotMicUser);
+				sprintf_s(szMsg, MAX_PATH, "ALERT: AUTO UNDOT FAILED! on %s | Stopping Auto Dotting | RESTART the TIMER!", gszDotMicUser);
 				CopyPaste2Paltalk(szMsg);
+				// Stop the Auto Dot Mic User
+				SendDlgItemMessageW(ghMain, IDC_CHECKDOT, BM_SETCHECK, (WPARAM)BST_UNCHECKED, 0);
+				gbAutoDot = FALSE; // Disable auto dotting	
 			}
+			
 			// Reset dotted mic user
 			sprintf_s(gszDotMicUser, MAX_PATH, "");
 			
@@ -509,6 +534,7 @@ void MicTimerTick(void)
 		{
 			sprintf_s(szMsg, MAX_PATH, "%s on Mic for: %d:%02d min.", gszCurrentNick, iMin, iSec);
 			CopyPaste2Paltalk(szMsg);
+
 		}
 
 	}
@@ -535,20 +561,20 @@ void MonitorTimerTick(void)
 	else if (strlen(gszCurrentNick) < 2 && strlen(gszSavedNick) > 2)
 	{
 		iDrp++; //to tolerate mic dropout
-#ifdef DEBUG
-		char szTemp[MAX_PATH] = { '\0' };
-		sprintf_s(szTemp, "Mic dropout count %d \n", iDrp);
-		OutputDebugStringA(szTemp);
-#endif // DEBUG
+//#ifdef DEBUG
+//		char szTemp[MAX_PATH] = { '\0' };
+//		sprintf_s(szTemp, "Mic dropout count %d \n", iDrp);
+//		OutputDebugStringA(szTemp);
+//#endif // DEBUG
 		
 		if (iDrp > 3) // 5 second dropout
 		{
 			MicTimerReset(); //Stop the mic timing
 			sprintf_s(gszSavedNick, ""); // Reset the saved nick
-#ifdef DEBUG
-			sprintf_s(szTemp, "5 dropouts: %d Reset Mic timer \n", iDrp);
-			OutputDebugStringA(szTemp);
-#endif // DEBUG
+//#ifdef DEBUG
+//			sprintf_s(szTemp, "5 dropouts: %d Reset Mic timer \n", iDrp);
+//			OutputDebugStringA(szTemp);
+//#endif // DEBUG
 					
 			iDrp = 0;
 		}
@@ -620,10 +646,10 @@ BOOL GetMicUser(void)
 		sprintf_s(szTemp, "%d", iMaxNicks);
 		SendDlgItemMessageA(ghMain, IDC_EDIT2, WM_SETTEXT, (WPARAM)0, (LPARAM)szTemp);
 	}
-#ifdef DEBUG
-	sprintf_s(szMsg, "Number of nicks: %d \n", iNicks);
-	OutputDebugStringA(szMsg);
-#endif // DEBUG
+//#ifdef DEBUG
+//	sprintf_s(szMsg, "Number of nicks: %d \n", iNicks);
+//	OutputDebugStringA(szMsg);
+//#endif // DEBUG
 	for (int i = 0; i < iNicks; i++)
 	{
 		lviNick.mask = LVIF_IMAGE | LVIF_TEXT;
@@ -657,10 +683,10 @@ BOOL GetMicUser(void)
 		}
 
 	}
-#ifdef DEBUG
-	sprintf_s(szMsg, "Image: %d Nickname: %s \n", iImg, gszCurrentNick);
-	OutputDebugStringA(szMsg);
-#endif // DEBUG
+//#ifdef DEBUG
+//	sprintf_s(szMsg, "Image: %d Nickname: %s \n", iImg, gszCurrentNick);
+//	OutputDebugStringA(szMsg);
+//#endif // DEBUG
 	// Cleanup 
 	if (vpMemLvi != NULL) VirtualFreeEx(hProc, vpMemLvi, 0, MEM_RELEASE);
 	if (pXItemNameBuff != NULL) VirtualFreeEx(hProc, pXItemNameBuff, 0, MEM_RELEASE);
@@ -1071,6 +1097,7 @@ HRESULT __stdcall DotAndUnDotMicUser(char* szMicUser)
 		swprintf_s(gwcDebugMsg, MAX_PATH, L"Failed to create MemberItemWidget Condition!\n");
 		OutputDebugStringW(gwcRoomTitle);
 #endif // DEBUG
+
 		return E_FAIL;
 	}
 	// We are looking for the MemberItemWidget element inside the room
@@ -1080,7 +1107,12 @@ HRESULT __stdcall DotAndUnDotMicUser(char* szMicUser)
 		swprintf_s(gwcDebugMsg, MAX_PATH, L"Failed to create MemberItemWidget Condition!\n");
 		OutputDebugStringW(gwcRoomTitle);
 #endif // DEBUG
-		return E_FAIL;
+		// If we cannot find the member item, we left click on the BaseButton element
+		SimulateLeftClick(ptBaseButton.x, ptBaseButton.y);
+		std::this_thread::sleep_for(std::chrono::milliseconds(500));
+		// Set cursor back to the original position
+		SetCursorPos(ptCur.x, ptCur.y);
+		return E_NOTIMPL;// E_FAIL;
 	}
 	
 	// Getting the bounding rect of member item.
@@ -1133,25 +1165,25 @@ void RestoreAndBringToFront(HWND hWnd)
 	if (IsIconic(hWnd))
 		ShowWindow(hWnd, SW_RESTORE);
 
-	//// Get current foreground window
-	//HWND hForeground = GetForegroundWindow();
-	//if (hForeground == hWnd)
-	//	return; // already in front
+	// Get current foreground window
+	HWND hForeground = GetForegroundWindow();
+	if (hForeground == hWnd)
+		return; // already in front
 
-	//// Get thread IDs
-	//DWORD dwFgThread = GetWindowThreadProcessId(hForeground, NULL);
-	//DWORD dwOurThread = GetCurrentThreadId();
+	// Get thread IDs
+	DWORD dwFgThread = GetWindowThreadProcessId(hForeground, NULL);
+	DWORD dwOurThread = GetCurrentThreadId();
 
-	//// Temporarily attach input
-	//AttachThreadInput(dwOurThread, dwFgThread, TRUE);
+	// Temporarily attach input
+	AttachThreadInput(dwOurThread, dwFgThread, TRUE);
 
-	//// Bring to front
-	//SetForegroundWindow(hWnd);
-	//BringWindowToTop(hWnd);
-	//SetFocus(hWnd);
+	// Bring to front
+	SetForegroundWindow(hWnd);
+	BringWindowToTop(hWnd);
+	SetFocus(hWnd);
 
-	//// Detach input
-	//AttachThreadInput(dwOurThread, dwFgThread, FALSE);
+	// Detach input
+	AttachThreadInput(dwOurThread, dwFgThread, FALSE);
 }
 
 
