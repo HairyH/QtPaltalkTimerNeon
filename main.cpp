@@ -5,7 +5,7 @@
 #include "main.h"
 
 using namespace std;
-#undef DEBUG
+//#undef DEBUG
 //#define DEBUG
 
 // Global Variables
@@ -135,7 +135,7 @@ BOOL CALLBACK DlgMain(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 		UninitUIAutomation();
 		EndDialog(hwndDlg,IDCANCEL);
 	}
-	break;
+	return TRUE;
 	case WM_CONTEXTMENU:
 	{
 		CreateContextMenu(wParam, lParam);
@@ -235,7 +235,7 @@ BOOL CALLBACK DlgMain(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 	}
 	return TRUE;
 	default:
-		return DefWindowProc(hwndDlg, uMsg, wParam, lParam);
+		return FALSE;
 	}
 	return FALSE;
 }
@@ -470,7 +470,7 @@ void MicTimerTick(void)
 			// Reset saved nick
 			sprintf_s(gszSavedNick, ""); // Reset the saved nick
 			// Make sure we have Paltalk main window in focus
-			RestoreAndBringToFront(ghPtMain);
+			RestoreAndBringToFront(ghPtRoom);
 			Sleep(1000); // Give some time for the window to come into focus
 			// First call to dot
 			HRESULT hr = DotAndUnDotMicUser(gszDotMicUser);
@@ -521,7 +521,6 @@ void MicTimerTick(void)
 	}
 }
 /// Every sec checks mic user
-//#undef DEBUG
 void MonitorTimerTick(void)
 {
 	GetMicUser();
@@ -669,7 +668,7 @@ BOOL GetMicUser(void)
 
 	return bRet;
 }
-//#define DEBUG
+
 /// Make popup menu for beep
 void CreateContextMenu(WPARAM wParam, LPARAM lparam)
 {
@@ -1038,19 +1037,18 @@ HRESULT __stdcall DotAndUnDotMicUser(char* szMicUser)
 			r.right = static_cast<LONG>(pData[2]);
 			r.bottom = static_cast<LONG>(pData[3]);
 
-			int x = (r.left + (r.right / 2));
-			int y = (r.top + (r.bottom / 2));
-			ptBaseButton.x = x;
-			ptBaseButton.y = y;
+			ptBaseButton.x = (r.left + (r.right / 2));
+			ptBaseButton.y = (r.top + (r.bottom / 2));
+						
 #ifdef DEBUG
-			sprintf_s(gszDebugMsg, MAX_PATH, "X position = %d Y position = %d\n", x, y);
+			sprintf_s(gszDebugMsg, MAX_PATH, "X position = %d Y position = %d\n", ptBaseButton.x, ptBaseButton.y);
 			OutputDebugStringA(gszDebugMsg);
 #endif // DEBUG
 			
 			baseButtonEl->SetFocus();
 
 			// Activate the user list search box
-			SimulateLeftClick(x, y);
+			SimulateLeftClick(ptBaseButton.x, ptBaseButton.y);
 			std::this_thread::sleep_for(std::chrono::milliseconds(300));
 			// Send the dotted user name to the search box
 			for (int i = 0; i < strlen(szMicUser); i++)
@@ -1135,25 +1133,25 @@ void RestoreAndBringToFront(HWND hWnd)
 	if (IsIconic(hWnd))
 		ShowWindow(hWnd, SW_RESTORE);
 
-	// Get current foreground window
-	HWND hForeground = GetForegroundWindow();
-	if (hForeground == hWnd)
-		return; // already in front
+	//// Get current foreground window
+	//HWND hForeground = GetForegroundWindow();
+	//if (hForeground == hWnd)
+	//	return; // already in front
 
-	// Get thread IDs
-	DWORD dwFgThread = GetWindowThreadProcessId(hForeground, NULL);
-	DWORD dwOurThread = GetCurrentThreadId();
+	//// Get thread IDs
+	//DWORD dwFgThread = GetWindowThreadProcessId(hForeground, NULL);
+	//DWORD dwOurThread = GetCurrentThreadId();
 
-	// Temporarily attach input
-	AttachThreadInput(dwOurThread, dwFgThread, TRUE);
+	//// Temporarily attach input
+	//AttachThreadInput(dwOurThread, dwFgThread, TRUE);
 
-	// Bring to front
-	SetForegroundWindow(hWnd);
-	BringWindowToTop(hWnd);
-	SetFocus(hWnd);
+	//// Bring to front
+	//SetForegroundWindow(hWnd);
+	//BringWindowToTop(hWnd);
+	//SetFocus(hWnd);
 
-	// Detach input
-	AttachThreadInput(dwOurThread, dwFgThread, FALSE);
+	//// Detach input
+	//AttachThreadInput(dwOurThread, dwFgThread, FALSE);
 }
 
 
